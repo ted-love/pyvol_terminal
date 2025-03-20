@@ -18,7 +18,7 @@ Key Features
 
 Minimum Requirements
 --------------------
-* numpy==2.2.4
+* numpy==2.1.3
 * pandas==2.2.3
 * PyOpenGL==3.1.9
 * pyqtgraph==0.14.0.dev0
