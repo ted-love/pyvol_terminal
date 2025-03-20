@@ -2,7 +2,7 @@
 
 A package that utilises QT and OpenGL graphics to visualise **realtime** 3D volatility surfaces and analytics.
 
-Key Features:
+Key Features
 -------------
 - Realtime plotting
 - Can use your own engines for option pricing, interest/divident-rates and interpolation engines (Includes default.)
