@@ -1,4 +1,4 @@
-<img width="959" alt="Screenshot 2025-03-25 172036" src="https://github.com/user-attachments/assets/74b6a96d-2b9d-47de-99e8-d5aab894d895" /><img width="959" alt="Screenshot 2025-03-25 172036" src="https://github.com/user-attachments/assets/47fec682-f58d-4386-9124-851f52be26ac" /># PyVol Surface
+# PyVol Surface
 
 A package that utilises QT and OpenGL graphics to visualise **realtime** 3D volatility surfaces and analytics.
 
