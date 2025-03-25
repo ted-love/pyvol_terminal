@@ -3,7 +3,7 @@ import numpy as np
 import time
 import math
 import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict
 
 
@@ -70,7 +70,7 @@ class Option(_BaseInstrument):
         self.expiry=expiry
         self.flag=flag
         self.flag_int=flag_int
-        self.IVOL= np.nan*np.zeros(3)
+        self.ivol= np.nan*np.zeros(3)
         self.delta= np.nan* np.zeros(3)
         self.delta_mag= np.nan * np.zeros(3)
         self.gamma=np.nan* np.zeros(3)
@@ -108,50 +108,50 @@ class Option(_BaseInstrument):
                     self.OTM=True
 
     def get_all_metrics(self):
-        return self.IVOL, self.delta, self.delta_mag, self.gamma, self.vega, self.moneyness, self.log_moneyness,\
-                self.standardised_moneyness, self.OTM, self.call_flag
+        return self.ivol, self.delta, self.delta_mag, self.gamma, self.vega, self.moneyness, self.log_moneyness,\
+                self.standardised_moneyness, self.OTM, self.call_flag, self.underlying_object.mid
         
     def calculate_implied_volatility(self,):
-        if self.underlying_object.valid_price:
-            if self.valid_price and self.OTM==True:
-                self.IVOL = self.option_engine.calculate_IVOL([self.bid, self.ask, self.mid],
+        #if self.underlying_object.valid_price:
+         #   if self.valid_price and self.OTM==True:
+                self.ivol = self.option_engine.calculate_IVOL([self.bid, self.ask, self.mid],
                                                               self.underlying_object.mid,)
 
     def calculate_all_greeks(self):
         if self.valid_price and self.underlying_object.valid_price:
-            self.delta, self.gamma, self.vega, self.theta, self.rho = self.option_engine.calculate_all_greeks(self.IVOL,
+            self.delta, self.gamma, self.vega, self.theta, self.rho = self.option_engine.calculate_all_greeks(self.ivol,
                                                                                                              self.underlying_object.mid)
             self.delta_mag = np.abs(self.delta)
         else:
             self.delta, self.gamma, self.vega, self.theta, self.rho, self.delta_mag = [self._nan_3_numpy] * 6
 
     def calculate_delta(self,):
-        self.delta = self.option_engine.calculate_delta(self.IVOL,
+        self.delta = self.option_engine.calculate_delta(self.ivol,
                                                        self.underlying_object.mid,
                                                        )
         self.delta_mag = np.abs(self.delta)
 
     def calculate_gamma(self,):
-        self.gamma = self.option_engine.calculate_gamma(self.IVOL,
+        self.gamma = self.option_engine.calculate_gamma(self.ivol,
                                                        self.underlying_object.mid,
                                                        )
     def calculate_vega(self,):
-        self.vega = self.option_engine.calculate_vega(self.IVOL,
+        self.vega = self.option_engine.calculate_vega(self.ivol,
                                                      self.underlying_object.mid,
-                                                    )
+                                                     )
         
     def calculate_all_moneyness(self,):
         if self.underlying_object.valid_price:
             self.moneyness = self.strike / self.underlying_object.mid
             self.log_moneyness = np.log(self.moneyness)
-            self.standardised_moneyness = self.log_moneyness / (self.IVOL * math.sqrt(utils.convert_unix_maturity_to_years(self.expiry)))
+            self.standardised_moneyness = self.log_moneyness / (self.ivol * math.sqrt(utils.convert_unix_maturity_to_years(self.expiry)))
         else:
             self.moneyness=np.nan
             self.log_moneyness=np.nan
             self.standardised_moneyness = self._nan_3_numpy.copy()
             
     def calculate_standardised_moneyness(self,):
-        self.standardised_moneyness = np.log(self.underlying_object.mid / self.strike) / (self.IVOL * math.sqrt(utils.convert_unix_maturity_to_years(self.expiry)))
+        self.standardised_moneyness = np.log(self.underlying_object.mid / self.strike) / (self.ivol * math.sqrt(utils.convert_unix_maturity_to_years(self.expiry)))
         
     def calculate_log_moneyness(self,):
         self.log_moneyness = np.log(self.underlying_object.mid/ self.strike)
@@ -169,18 +169,28 @@ class OptionInverted(Option):
                 super().update_price(bid=bid, ask=ask, **kwargs)
     
         
-@dataclass(slots=True, frozen=True)
+@dataclass
 class BaseMap:
     index_name_map: dict
     name_index_map: dict
     
     
-@dataclass(slots=True, frozen=True)
+@dataclass
 class OptionMap(BaseMap):
-    put_call_map: dict
+    put_call_map: dict[str] = field(init=False, default=dict)
+    expiry_strike_map: dict[np.ndarray] = field(init=False, default=dict)
+    strike_expiry_map: dict[np.ndarray] = field(init=False, default=dict)
+    expiry_instrument_map: dict[list] = field(init=False, default=dict)
+    strike_instrument_map: dict[list] = field(init=False, default=dict)
+    expiry_strike_instrument_map: dict[dict[list]] = field(init=False, default=dict)
+    strike_expiry_instrument_map: dict[dict[list]] = field(init=False, default=dict)
     
     
 class InstrumentManager:
+    df_options: pd.DataFrame = pd.DataFrame()
+    df_futures: pd.DataFrame = pd.DataFrame()
+    df_spot: pd.DataFrame = pd.DataFrame()
+    
     def __init__(self):
         self.futures = {}
         self.spot = {}
@@ -193,7 +203,11 @@ class InstrumentManager:
         self.options_1_underlying_flag=False
         self.options_underlying_object=None
         
+        self.options_expiry = {}
+        self.options_strike = {}        
+        
     def create_spot_object(self, df_spot):
+        InstrumentManager.df_spot = df_spot
         if not df_spot is None:
             obj = Spot(df_spot["instrument_name"].item())
             self.spot[df_spot["instrument_name"].item()] = obj
@@ -203,9 +217,11 @@ class InstrumentManager:
                 self.options_1_underlying_flag=True
             else:
                 self.options_1_underlying_flag=False
-
+        
                         
-    def create_future_objects(self, df_futures, future_config, interest_rate_engine=None, dividend_rate_engine=None):        
+    def create_future_objects(self, df_futures, future_config, interest_rate_engine=None, dividend_rate_engine=None):   
+        InstrumentManager.df_futures = df_futures
+
         for idx in df_futures.index:
             future_row = df_futures.loc[idx]
             instrument_name = future_row["instrument_name"]
@@ -234,8 +250,9 @@ class InstrumentManager:
             self.all_instrument_objects[instrument_name]=future_object
             
         self.futures_maps = self._create_maps(self.futures)
-        
+                
     def create_option_objects(self, df_options, option_config, interest_rate_engine, dividend_rate_engine):
+        InstrumentManager.df_options = df_options
         df_options["strike"] = pd.to_numeric(df_options["strike"], errors='coerce')
         df_options["expiry"] = pd.to_numeric(df_options["expiry"], errors='coerce')
 
@@ -283,17 +300,13 @@ class InstrumentManager:
             self.options[instrument_name]=option
             self.all_instrument_objects[instrument_name]=option
         
-        put_call_pair_map = {}
-        
-        for opt_name1, object1 in self.options.items():
-            for opt_name2, object2 in self.options.items():
-                if object1.instrument_name != object2.instrument_name:
-                    if object1.strike == object2.strike and object1.expiry==object2.expiry:
-                        put_call_pair_map[opt_name1]=opt_name2
-        
+                        
         temp_base = self._create_maps(self.options)
-        self.options_maps = OptionMap(temp_base.index_name_map, temp_base.name_index_map, put_call_pair_map)
-                
+        
+        self.options_maps = OptionMap(temp_base.index_name_map, temp_base.name_index_map)
+        
+        self.update_option_attr_maps()
+        
         if self.options_underlying_object is None:
             underlying_list = np.unique(list(option_config["underlying_map"].values()))
             if len(underlying_list) == 1:
@@ -301,7 +314,58 @@ class InstrumentManager:
                 self.options_underlying_object=self.all_instrument_objects[underlying_list[0]]
             else:
                 self.options_1_underlying_flag=False
-            
+        self._create_options_arrangement(df_options)
+        
+    def update_option_attr_maps(self):
+        put_call_pair_map = {}
+        for opt_name1, object1 in self.options.items():
+            for opt_name2, object2 in self.options.items():
+                if object1.instrument_name != object2.instrument_name:
+                    if object1.strike == object2.strike and object1.expiry==object2.expiry:
+                        put_call_pair_map[opt_name1]=opt_name2
+        
+        df_options_subsampled = InstrumentManager.df_options[InstrumentManager.df_options["instrument_name"].isin(self.options.keys())]
+        expiries = df_options_subsampled["expiry"].unique()
+        strikes = df_options_subsampled["strike"].unique()
+        
+        expiry_strike_map={}
+        expiry_instrument_map={}
+        expiry_strike_instrument_map={}
+        for expiry in expiries:
+            df_sample = df_options_subsampled[df_options_subsampled["expiry"] == expiry]
+            sample_strikes = df_sample["strike"].unique()
+            expiry_strike_map[expiry] = sample_strikes
+            sample_expiry_instrument_names = df_sample["instrument_name"].to_list()
+            expiry_instrument_map[expiry] = sample_expiry_instrument_names
+            expiry_strike_instrument_map[expiry] = {}
+            for strike in sample_strikes:
+                df_strikes = df_sample[df_sample["strike"]==strike]
+                sample_expiry_strike_instrument_names = df_strikes["instrument_name"].to_list()
+                expiry_strike_instrument_map[expiry].update({strike : sample_expiry_strike_instrument_names})
+        
+        strike_expiry_map={}
+        strike_instrument_map={}
+        strike_expiry_instrument_map={}
+        for strike in strikes:
+            df_sample = df_options_subsampled[df_options_subsampled["strike"] == strike]
+            sample_expiries = df_sample["expiry"].unique()
+            strike_expiry_map[strike] = sample_expiries
+            sample_strike_instrument_names = df_sample["instrument_name"].to_list()
+            strike_instrument_map[strike] = sample_strike_instrument_names
+            strike_expiry_instrument_map[strike] = {}
+            for expiry in sample_expiries:
+                df_expiries = df_sample[df_sample["expiry"]==expiry]
+                sample_strike_expiry_instrument_names = df_expiries["instrument_name"].to_list()
+                strike_expiry_instrument_map[strike].update({expiry : sample_strike_expiry_instrument_names})
+        
+        self.options_maps.put_call_map = put_call_pair_map
+        self.options_maps.expiry_strike_map = expiry_strike_map
+        self.options_maps.strike_expiry_map = strike_expiry_map
+        self.options_maps.expiry_instrument_map = expiry_instrument_map
+        self.options_maps.strike_instrument_map = strike_instrument_map
+        self.options_maps.expiry_strike_instrument_map = expiry_strike_instrument_map
+        self.options_maps.strike_expiry_instrument_map = strike_expiry_instrument_map
+    
     def _create_maps(self, instrument_object_dict):        
         index_name_map = {idx: name for idx, name in enumerate(instrument_object_dict)}
         name_index_map = {name: idx for idx, name in enumerate(instrument_object_dict)}
@@ -314,7 +378,21 @@ class InstrumentManager:
             
             if OTM_flag == pair_object.OTM:
                 pair_object.OTM = not OTM_flag
-                
+    
+    def _create_options_arrangement(self, df_options):
+        expiries = df_options["expiry"].unique()
+        strikes = df_options["strike"].unique()
+        
+        self.options_expiry = {exp : {} for exp in expiries}
+        self.options_strike = {s : {} for s in strikes}
+
+        for option_name, option_object in self.options.items():
+            strike = option_object.strike
+            expiry = option_object.expiry
+            
+            self.options_expiry[expiry].update({option_name : option_object})
+            self.options_strike[strike].update({option_name : option_object})
+
                 
 def create_instrument_objects(data_config, option_config, future_config=None, interest_rate_engine=None, dividend_rate_engine=None):
     instrument_manager = InstrumentManager()
@@ -354,4 +432,4 @@ def _cleanup_dataframe(df, df_type):
     for col in numeric_columns:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
-    return df    
+    return df

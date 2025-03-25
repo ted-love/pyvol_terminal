@@ -5,20 +5,35 @@ from py_vol_surface import utils
 from typing import Any
 import copy
 from py_vol_surface import misc_widgets
-from typing import ClassVar, Optional
+from typing import Dict, ClassVar, Optional
 from py_vol_surface import exceptions
 import warnings
-
+from pydantic.dataclasses import dataclass as pdataclass
 
 def custom_showwarning(message, category, filename, lineno, file=None, line=None):
     print(f"UserWarning: {message} ({filename}, line {lineno})")
 warnings.showwarning = custom_showwarning
 
 
+@dataclass(slots=True)
 class Raw:
+    n_options: np.ndarray = field(init=False, default_factory=np.array)
+    ivol: np.ndarray = field(init=False, default_factory=np.array)
+    delta: np.ndarray = field(init=False, default_factory=np.array)
+    delta_mag: np.ndarray = field(init=False, default_factory=np.array)
+    gamma: np.ndarray = field(init=False, default_factory=np.array)
+    vega: np.ndarray = field(init=False, default_factory=np.array)
+    moneyness: np.ndarray = field(init=False, default_factory=np.array)
+    log_moneyness: np.ndarray = field(init=False, default_factory=np.array)
+    standardised_moneyness: np.ndarray = field(init=False, default_factory=np.array)
+    OTM: np.ndarray = field(init=False, default_factory=np.array)
+    call_flag: np.ndarray = field(init=False, default_factory=np.array)
+    valid_price: np.ndarray = field(init=False, default_factory=np.array)
+    underlying_price: np.ndarray = field(init=False, default_factory=np.array)
+    
     def __init__(self, n_options):
         self.n_options = n_options
-        self.IVOL = np.full(n_options, np.nan)
+        self.ivol = np.full(n_options, np.nan)
         self.delta = np.full(n_options, np.nan)
         self.delta_mag = np.full(n_options, np.nan)
         self.gamma = np.full(n_options, np.nan)
@@ -29,14 +44,14 @@ class Raw:
         self.OTM = np.array([True] * n_options)
         self.call_flag = np.array([True] * n_options)
         self.valid_price= np.array([False] * n_options)
+        self.underlying_price = np.full(n_options, np.nan)
 
     def update_IVOL(self, idx, implied_volatility):
-        self.IVOL[idx] = implied_volatility
+        self.ivol[idx] = implied_volatility
     
-    def update_all_metrics(self, idx, jdx, IVOL, delta, delta_mag, gamma, vega, moneyness,
-                           log_moneyness, standardised_moneyness, OTM, call_flag, valid_price):
-        
-        self.IVOL[idx] = IVOL[jdx]
+    def update_all_metrics(self, idx, jdx, ivol, delta, delta_mag, gamma, vega, moneyness,
+                           log_moneyness, standardised_moneyness, OTM, call_flag, valid_price, underlying_price):
+        self.ivol[idx] = ivol[jdx]
         self.delta[idx] = delta[jdx]
         self.delta_mag[idx] = delta_mag[jdx]
         self.gamma[idx] = gamma[jdx]
@@ -47,37 +62,71 @@ class Raw:
         self.OTM[idx] = OTM
         self.call_flag[idx] = call_flag
         self.valid_price[idx]=valid_price
+        self.underlying_price[idx]=underlying_price
     
-    def update_with_instrument_object(self, idx, option_object, IVOL, update_list):
-        self.IVOL[idx] = IVOL
+    def update_with_instrument_object(self, idx, option_object, ivol, update_list):
+        self.ivol[idx] = ivol
         for metric in update_list:    
             getattr(self, metric)[idx] = getattr(option_object, metric)
        
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class BaseDomain:
     strike: np.ndarray
     expiry: np.ndarray
     x_metric: str
     y_metric: str
+    
         
-        
+@dataclass(slots=True)
 class Domain:
-    def __init__(self, base_domain=None, **kwargs):
-        self.x=base_domain.strike
-        self.y=base_domain.expiry
-        self.x_metric=base_domain.x_metric
-        self.y_metric=base_domain.y_metric
+    base_domain: BaseDomain
+    x: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    y: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    x_vect: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    y_vect: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    x_mat: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    y_mat: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    z_mat: np.ndarray = field(init=False, default_factory=lambda: np.array)
+
+    xy: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    idx_ij_mapping: Dict[int, tuple] = field(init=False, default_factory=dict)
+    z_mat: float = field(init=False, default_factory=lambda: np.array)
+    
+    def __post_init__(self):
+        self._create_domain(self.base_domain.strike.copy(), self.base_domain.expiry.copy())
+
+    def _create_domain(self, x, y):
+        self.x = x
+        self.y = y
+        self.xy = np.column_stack((self.x, self.y)) 
+
+        self.x_vect = np.unique(self.base_domain.strike)
+        self.y_vect = np.unique(self.base_domain.expiry)
+
+        self.x_mat, self.y_mat = np.meshgrid(self.x_vect, self.y_vect, indexing="xy")
+        self.z_mat = np.full(self.x_mat.shape, np.nan)
         
-        self.xy = np.column_stack((self.x, self.y))
-        self._calc_metrics()
-    
-    def _calc_metrics(self, ):
-        self.x_min  = self.x.min()
-        self.x_max  = self.x.max()
-        self.y_min  = self.y.min()
-        self.y_max  = self.y.max()
-    
+        self.idx_ij_mapping = {}
+        
+        for i in range(self.x_mat.shape[0]):
+            for j in range(self.x_mat.shape[1]):
+                match_idx = np.where((self.xy == [self.x_mat[i, j], self.y_mat[i, j]]).all(axis=1))[0]
+                for idx in match_idx:
+                    self.idx_ij_mapping[idx] = (i, j)
+
+    def update_data(self, z, idx_map):
+        for idx, ivol in zip(idx_map, z):
+            if idx in self.idx_ij_mapping:
+                i, j = self.idx_ij_mapping[idx]
+                self.z_mat[i,j] = ivol
+
+
+    def switch_axis(self):
+        pass
+
+
+
     def update(self, x=None, y=None, xy=None, z=None, x_metric=None, y_metric=None, z_metric=None):
         if not xy is None:
             self.xy = xy
@@ -96,13 +145,13 @@ class Domain:
         self._calc_metrics()
     
     
-@dataclass
+@dataclass(slots=True)
 class Scatter:  
     x: np.ndarray 
     y: np.ndarray 
     z: np.ndarray
     colour: tuple
-
+    
     x_min: float = np.nan
     x_max: float = np.nan
     y_min: float = np.nan
@@ -110,7 +159,16 @@ class Scatter:
     z_min: float = np.nan
     z_max: float = np.nan
     valid_values: bool = False
-
+    
+    x_min: float = field(init=False, default = np.nan)
+    x_max: float = field(init=False, default = np.nan)
+    y_min: float = field(init=False, default = np.nan)
+    y_max: float = field(init=False, default = np.nan)
+    z_min: float = field(init=False, default = np.nan)
+    z_max: float = field(init=False, default = np.nan)
+    
+    valid_values: bool = field(init=False, default=False)
+    
     def __post_init__(self):
         self.update_data(self.x, self.y, self.z)
         
@@ -134,28 +192,32 @@ class Scatter:
         self.z_max = np.amax(self.z)
                 
         
-@dataclass
+@dataclass(slots=True)
 class Surface:
-    scatter: 'Scatter'
+    scatter: Scatter
     interpolator: Any
     n_x: int
     n_y: int
     colourmap_style:str
-    
-    x: np.ndarray = field(init=False)
-    y: np.ndarray = field(init=False)
-    z: np.ndarray = field(init=False)
-    
-    x_min: float = field(init=False)
-    x_max: float = field(init=False)
-    y_min: float = field(init=False)
-    y_max: float = field(init=False)
-    z_min: float = np.nan
-    z_max: float = np.nan
-    valid_values: bool = False
-    last_interpolation_attempt_valid: bool = False
 
-    colourmap: 'misc_widgets.CustomColorMap' = field(init=False)
+    x: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    y: np.ndarray = field(init=False, default_factory=lambda: np.array)
+    z: np.ndarray = field(init=False, default_factory=lambda: np.array)
+            
+    x_min: float = field(init=False, default=np.nan)
+    x_max: float = field(init=False, default=np.nan)
+    y_min: float = field(init=False, default=np.nan)
+    y_max: float = field(init=False, default=np.nan)
+    
+    z_min: float = field(init=False, default=np.nan)
+    z_max: float = field(init=False, default=np.nan)
+    
+    valid_values: bool = field(init=False, default=False)
+    last_interpolation_attempt_valid: bool = field(init=False, default=False)
+    current_view_selection: str = field(init=False, default="Surface")
+    
+    colourmap: 'misc_widgets.CustomColorMap' = field(init=False, default=None)
+    
     def __post_init__(self):   
         self.colourmap = misc_widgets.CustomColorMap(self.colourmap_style)
         self.x=self.scatter.x
@@ -168,16 +230,29 @@ class Surface:
         
     def get_limits(self,):
         return self.x_min, self.x_max, self.y_min, self.y_max, self.z_min, self.z_max
-    
-    def update_data_from_scatter_object(self, scatter_object , extension_x=[0,0], extension_y=[0,0]):
-        self.x_min = scatter_object.x_min + extension_x[0]
-        self.x_max = scatter_object.x_max + extension_x[1]
-        self.y_min = scatter_object.y_min + extension_y[0]
-        self.y_max = scatter_object.y_max + extension_y[1]
 
-        self.x = np.linspace(self.x_min, self.x_max, self.n_x)
-        self.y = np.linspace(self.y_min, self.y_max, self.n_y)
+    def update_table(self, scatter_object):
+        self.create_tradeable_domain(scatter_object)
         
+        for (x, y, z_val) in zip(scatter_object.x, scatter_object.y, scatter_object.z):
+            i = np.where(self.x == x)[0][0]
+            j = np.where(self.y == y)[0][0]
+            self.z[i, j] = z_val
+    
+    def update_data_from_scatter_object(self, scatter_object):
+        if (self.x_min != scatter_object.x_min
+            or self.x_max != scatter_object.x_max
+            or self.y_min != scatter_object.y_min
+            or self.y_max != scatter_object.y_max):
+
+            self.x_min = scatter_object.x_min 
+            self.x_max = scatter_object.x_max
+            self.y_min = scatter_object.y_min
+            self.y_max = scatter_object.y_max
+
+            self.x = np.linspace(self.x_min, self.x_max, self.n_x)
+            self.y = np.linspace(self.y_min, self.y_max, self.n_y)
+
     def _create_interpolation_limits(self, scatter_object, extension_x=[0,0], extension_y=[0,0]):
         self.x_min = scatter_object.x_min + extension_x[0]
         self.x_max = scatter_object.x_max + extension_x[1]
@@ -222,20 +297,35 @@ class Surface:
 
 
 @dataclass
+class Smirk:
+    domain: Domain
+    raw: Raw
+    interpolator: Any
+    
+    xy: np.ndarray = field(init=False, default_factory=np.array)
+    
+    def __post_init__(self):
+        self.xy = self.domain.xy
+                
+
+
+@dataclass
 class DataContainer:
     price_type: Optional[str] = None
     raw: Optional["Raw"] = None
     scatter: Optional["Scatter"] = None
     surface: Optional["Surface"] = None
+    domain: Optional["Domain"] = None
     base_domain: ClassVar[BaseDomain]
     
     def __post_init__(self):
         if not self.scatter is None and not self.surface is None:
             self._calculate_data_limits()
     
-    def update_dataclasses(self, x, y, z):
+    def update_dataclasses(self, x, y, z, idx_map):
         self.scatter.update_data(x, y, z)
         self.surface.update_data_from_scatter_object(self.scatter)
+        self.domain.update_data(z, idx_map)
         self.surface.interpolate_surface()
         self._calculate_data_limits()
     
@@ -263,14 +353,16 @@ class DataContainer:
             jdx = option_object.price_type_idx_map[price_type]
             self.raw.update_all_metrics(idx, jdx, *option_object.get_all_metrics(), option_object.valid_price) 
         
-        x, y, z = axis_transformer.transform_data(self.raw)
-
+        x, y, z, idx_map = axis_transformer.transform_data(self.raw)
+        
         self.scatter = Scatter(x, y, z, colour_config["scatter"][self.price_type])
         self.surface = Surface(self.scatter,
                                copy.deepcopy(interpolation_config["engine"]),
                                interpolation_config["n_x"],
                                interpolation_config["n_y"],
                                colour_config["surface"][self.price_type])
+        self.domain = Domain(self.base_domain)
+        
         self._calculate_data_limits()
         return self        
 
@@ -359,12 +451,12 @@ class DataContainerManager:
     data_container: InitVar[DataContainer] = None
     
     objects: dict = field(init=False, default_factory=dict)
-    x_min: float = field(init=False)
-    x_max: float = field(init=False)
-    y_min: float = field(init=False)
-    y_max: float = field(init=False)
-    z_min: float = field(init=False)
-    z_max: float = field(init=False)
+    x_min: float = field(init=False, default=np.nan)
+    x_max: float = field(init=False, default=np.nan)
+    y_min: float = field(init=False, default=np.nan)
+    y_max: float = field(init=False, default=np.nan)
+    z_min: float = field(init=False, default=np.nan)
+    z_max: float = field(init=False, default=np.nan)
 
     features: DataFeatureManager = None
 
@@ -401,7 +493,6 @@ class DataContainerManager:
         else:
             self.x_min, self.x_max, self.y_min, self.y_max, self.z_min, self.z_max = [np.nan] * 6
             self.valid_values_any=False
-        
             
     def get_limits(self):
         return self.x_min, self.x_max, self.y_min, self.y_max, self.z_min, self.z_max
@@ -413,9 +504,10 @@ def create_init_dataclasses(df_options, price_types):
     base_domain = BaseDomain(df_options["strike"].values,
                              df_options["expiry"].values,
                              "Expiry",
-                             "Strike",
-                             )
+                             "Strike")
     
     DataContainer.base_domain=base_domain
     data_container_manager = DataContainerManager(price_types)
     return data_container_manager, base_domain
+
+

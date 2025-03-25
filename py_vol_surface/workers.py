@@ -2,7 +2,6 @@ from PySide6 import QtCore
 import asyncio
 import queue
 import time
-import threading
 
 class WebsocketWorker(QtCore.QThread):
     update_signal = QtCore.Signal(list, bool)  
@@ -41,7 +40,6 @@ class WebsocketWorker(QtCore.QThread):
             except queue.Empty:
                 break 
         if len(all_responses) > 0:
-            #print(f"WebsocketWorker: {threading.current_thread()}")
             self.update_signal.emit(all_responses, True)
             
     def run_threading(self,):
@@ -50,7 +48,7 @@ class WebsocketWorker(QtCore.QThread):
     async def run_async(self,):
         async for message in self.generator_call():
             if self._should_stop:  
-                break
+                break                
             self.update_signal.emit([message], False)
 
     def run(self):
@@ -67,6 +65,7 @@ class WebsocketWorker(QtCore.QThread):
         self._is_running = False
         self.quit()
         self.wait()
+
 
 class PriceProcessor:
     def __init__(self, main_window, axis_transformer, normalisation_engine, instrument_manager, data_container_manager, websocket_json_format, 
@@ -94,7 +93,7 @@ class PriceProcessor:
         ask = websocket_response[self.ws_ask_key]
         timestamp = websocket_response[self.ws_timestamp_key]
         asset_type = self.instrument_manager.name_to_instrument_type[instrument_name]
-        
+
         if asset_type == "options":
             instrument_object = self.instrument_manager.options[instrument_name]
             instrument_object.update_price(bid, ask)
@@ -146,14 +145,16 @@ class PriceProcessor:
         self._update_term_structure_engine(self.dividend_rate_config)
 
         for instrument_name, websocket_response in self.last_buffer_responses.copy().items():
+
+            
             self.update_price(websocket_response)
             del self.last_buffer_responses[instrument_name]
 
         self.last_buffer_responses.clear()        
 
         for data_object in self.data_container_manager.objects.values():
-            x, y, z = self.axis_transformer.transform_data(data_object.raw)
-            data_object.update_dataclasses(x, y, z)
+            x, y, z, idx_map = self.axis_transformer.transform_data(data_object.raw)
+            data_object.update_dataclasses(x, y, z, idx_map)
         
         self.data_container_manager.process_update()        
         self.last_process_update=time.time()

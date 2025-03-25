@@ -131,3 +131,4 @@ class SubPlot(pg.PlotWidget):
         
         painter.setPen(QtGui.QColor(*self.text_color))
         painter.drawText(text_rect, QtCore.Qt.AlignCenter, self.text)
+        

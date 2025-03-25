@@ -1,58 +1,64 @@
 from datetime import datetime
 import numpy as np
 from . import axis_widgets
+from ..utils import CustomDatetime
 from .. import utils
 
-def i_axis_labels(label_metric):
-    match label_metric:
-        case "Strike":
-            label = "Strike"
-        case  "Moneyness":
-            label = "Strike/Spot"
-        case "Log-Moneyness":
-            label = "log(Strike/Spot)"
-        case "Delta":
-            label = "Delta"
-    return label
+def create_axis_items(widget=None, n_major_ticks=None):    
+    def _create_add_2D_axis_item(ax_manager, tick_label_engine, title, orientation, axis_3D_direction):
+        axis_item = axis_widgets.CustomAxisItem(axis_3D_direction=axis_3D_direction, tick_label_engine=tick_label_engine, orientation=orientation) 
+        axis_item.setTitle(title)
+        ax_manager.add_2D_axis_item(axis_item, axis_3D_direction)
 
-def j_axis_labels(label_metric):
-    match label_metric:
-        case "Expiry":
-            label = "Expiry"
-        case "Years":
-            label = "Maturity (Years)"
-    return label
-
-def k_axis_labels(label_metric):
-    match label_metric:
-        case "Implied Volatility":
-            label = "Implied Volatility (%)"
-        case "Total Volatility":
-            label = "Total Volatility"
-    return label
-
-def get_axis_label(i_label_metric, j_label_metric, k_label_metric):
-    i_label = i_axis_labels(i_label_metric)
-    j_label = j_axis_labels(j_label_metric)
-    k_label = k_axis_labels(k_label_metric)
+    x_label = "Strike"
+    y_label = "Expiry"
+    z_label = "Implied Volatility"
     
-    axis_labes = {"i" : i_label,
-                  "j" : j_label,
-                  "k" : k_label}
-
-    return axis_labes
-
-def get_label_types():
-    label_metric_types = {"i_label_metrics" : ["Strike", "Moneyness", "Log-Moneyness", "Delta"],
-                          "j_label_metrics" : ["Expiry", "Years"],
-                          "k_label_metrics" : ["Implied Volatility", "Total Volatility"]
-                          }
+    tick_label_engine = TickLabelEngine(x_label, y_label, z_label)
     
-    return label_metric_types
+    axis_manager = axis_widgets.AxisManager(widget, tick_label_engine, n_major_ticks)
 
-def get_attributes_labels():
+    _create_add_2D_axis_item(axis_manager, tick_label_engine, x_label, "bottom", "x")
+    _create_add_2D_axis_item(axis_manager, tick_label_engine, y_label, "bottom", "y")
+    
+    _create_add_2D_axis_item(axis_manager, tick_label_engine, z_label, "left", "z")
+    _create_add_2D_axis_item(axis_manager, tick_label_engine, z_label, "left", "z")
+    
+    grid_manager = axis_widgets.GridManager(widget, n_major_ticks)
+    return axis_manager, grid_manager, tick_label_engine
+
+
+def create_axis_items2(widget=None, n_major_ticks=None):    
+    def _create_add_2D_axis_item(ax_manager, tick_label_engine, title, orientation, axis_3D_direction):
+        axis_item = axis_widgets.CustomAxisItem(axis_3D_direction=axis_3D_direction, tick_label_engine=tick_label_engine, orientation=orientation) 
+        axis_item.setTitle(title)
+        ax_manager.add_2D_axis_item(axis_item, axis_3D_direction)
+        
+
+    x_label = "Strike"
+    y_label = "Expiry"
+    z_label = "Implied Volatility"
+    
+    tick_label_engine_holder = {"x" : TickLabelEngine(x_label),
+                                "y" :  TickLabelEngine(y_label),
+                                "z" :  TickLabelEngine(z_label),
+                                }
+
+    axis_manager = axis_widgets.AxisManager(widget, tick_label_engine_holder, n_major_ticks)
+    
+    _create_add_2D_axis_item(axis_manager, tick_label_engine_holder["x"], x_label, "bottom", "x")
+    _create_add_2D_axis_item(axis_manager, tick_label_engine_holder["y"], y_label, "bottom", "y")
+    
+    _create_add_2D_axis_item(axis_manager, tick_label_engine_holder["z"], z_label, "left", "z")
+    _create_add_2D_axis_item(axis_manager, tick_label_engine_holder["z"], z_label, "left", "z")
+    
+    grid_manager = axis_widgets.GridManager(widget, n_major_ticks)
+    return axis_manager, grid_manager, tick_label_engine_holder
+
+
+def get_attribute_label_maps():
     metric_label_map = {"delta" : "Delta",
-                        "IVOL" : "Implied Volatility",
+                        "ivol" : "Implied Volatility",
                         "IVOL_perc" : "Implied Volatility (%)",
                         "TVAR" : "Total Volatility",
                         "expiry" : "Expiry",
@@ -67,28 +73,43 @@ def get_attributes_labels():
     return metric_label_map, label_metric_map
 
 
-class VisualTickGenerator:
-    def __init__(self):
+class TickLabelEngine:
+    def __init__(self, x_label, y_label, z_label):
         self._null = lambda x: f"{x:,.2f}"
-        self.tick_functions = {
-                            "Expiry": self.Expiry_function,
-                            "Years": self._null,
-                            "Delta": self.Delta_function,
-                            "Strike": self._null,
-                            "Moneyness": self._null,
-                            "Log-Moneyness": self._null,
-                            "Implied Volatility": self._null,
+
+        
+        self._tick_functions = {
+                                "Expiry": self.Expiry_function,
+                                "Years": self._null,
+                                "Delta": self.Delta_function,
+                                "Strike": self._null,
+                                "Moneyness": self._null,
+                                "Log-Moneyness": self._null,
+                                "Implied Volatility": self._null,
                             }
-        self.metric_label_map, self.label_metric_map = get_attributes_labels()
+        self.metric_label_map, self.label_metric_map = get_attribute_label_maps()
+        self.update_tick_label_func(x_label, "x")
+        self.update_tick_label_func(y_label, "y")
+        self.update_tick_label_func(z_label, "z")
+        self.x_func=self.get_tick_label_func("x")
+        self.y_func=self.get_tick_label_func("y")
+        self.z_func=self.get_tick_label_func("z")
+
     
+    def update_tick_label_func(self, axis_label, axis_direction):
+        setattr(self, f"{axis_direction}_func", self._tick_functions[axis_label])
+    
+    def get_tick_label_func(self, axis_direction):
+        return getattr(self, f"{axis_direction}_func")
+
     def get_function(self, axis_label):
-        if axis_label in self.tick_functions:
-            return self.tick_functions[axis_label]
+        if axis_label in self._tick_functions:
+            return self._tick_functions[axis_label]
         else:
             return self._null
     
     def get_tick_functions(self):
-        return self.tick_functions
+        return self._tick_functions
     
     @staticmethod
     def null_visualise(values):
@@ -110,7 +131,75 @@ class VisualTickGenerator:
     
     @staticmethod
     def Expiry_function(value):
-        return datetime.fromtimestamp(value).strftime("%d-%b").upper()
+        if value != value:
+            return str(value)
+        else:
+            return datetime.fromtimestamp(value).strftime("%d-%b").upper()
+            
+    @staticmethod
+    def Years_function(values):
+        return [f"{val:,.2f}" for val in values]
+
+
+
+class TickLabelEngine2:
+    def __init__(self, label, axis_direction):
+        self._null = lambda x: f"{x:,.2f}"
+        self.axis_direction = axis_direction    
+        
+        self._tick_functions = {
+                                "Expiry": self.Expiry_function,
+                                "Years": self._null,
+                                "Delta": self.Delta_function,
+                                "Strike": self._null,
+                                "Moneyness": self._null,
+                                "Log-Moneyness": self._null,
+                                "Implied Volatility": self._null,
+                            }
+        self.metric_label_map, self.label_metric_map = get_attribute_label_maps()
+        #self.x_func=self.update_function(x_label, "x")
+        #self.y_func=self.update_function(y_label, "y")
+        #self.z_func=self.update_function(z_label, "z")
+        self.tick_label_function=self.get_new_function(label)
+    
+    def get_new_function(self, axis_label):
+        self.tick_label_function = self._tick_functions[axis_label]
+        return self.tick_label_function
+
+
+    def get_function(self, axis_label):
+        if axis_label in self._tick_functions:
+            return self._tick_functions[axis_label]
+        else:
+            return self._null
+    
+    def get_tick_functions(self):
+        return self._tick_functions
+    
+    @staticmethod
+    def null_visualise(values):
+        return [f"{val:,.2f}" for val in values]
+    
+    @staticmethod
+    def rounder(tick_labels):
+        rounded = np.round(tick_labels)
+        can_be_integer = np.all(np.isclose(tick_labels, rounded))
+        if can_be_integer:
+            return rounded.astype(int).astype(str).tolist()
+        else:
+            round_val = int(abs(np.floor(np.log10(abs(np.diff(tick_labels)).min()))))
+            return np.round(tick_labels, round_val).astype(str).tolist()
+    
+    @staticmethod
+    def Delta_function(value):
+        return f"{round(100 * value, 1)}P" if value < 0.5 else f"{round(100 * (1 - value), 2)}C"
+    
+    @staticmethod
+    def Expiry_function(value):
+        if value != value:
+            return str(value)
+        else:
+            return datetime.fromtimestamp(value).strftime("%d-%b").upper()
     
     @staticmethod
     def Years_function(values):
@@ -125,7 +214,7 @@ def get_metric_maps():
                    "strike" : [],
                    "expiry" : [],
                    "years" : [],
-                   "IVOL" : [],
+                   "ivol" : [],
                    "IVOL_perc" :[],
                    "TVAR" : []}
     
@@ -139,7 +228,7 @@ def get_metric_functions():
                         "moneyness" : moneyness_mask_sorter,
                         "log_moneyness": moneyness_mask_sorter,
                         "standardised_moneyness" : moneyness_mask_sorter,
-                        "IVOL": null_metric,
+                        "ivol": null_metric,
                         "IVOL_perc" : null_metric,
                         "null" : null_metric,
                         "TVAR" : TVAR_function,
@@ -236,12 +325,12 @@ class MetricFunctionGenerator:
                                 "moneyness": self.moneyness_mask_sorter,
                                 "log_moneyness": self.moneyness_mask_sorter,
                                 "standardised_moneyness": self.moneyness_mask_sorter,
-                                "IVOL": self.null_metric,
+                                "ivol": self.null_metric,
                                 "IVOL_perc": self.IVOL_perc_function,
                                 "TVAR": self.TVAR_function,
                                }
         
-        self.metric_label_map, self.label_metric_map = get_attributes_labels()
+        self.metric_label_map, self.label_metric_map = get_attribute_label_maps()
 
         if self.only_1_underyling:
             self.metric_functions["moneyness"] = self.moneyness_spot
@@ -313,21 +402,3 @@ class MetricFunctionGenerator:
         x_sorted[~mask] = -x_sorted[~mask]
         x_sorted[mask] = 1 - x_sorted[mask]
         return x_sorted, y_sorted, z_sorted, mask_removal, mask_rearrange
-    
-    
-def create_axis_items(widget=None, n_ticks=None):    
-    def _create_add_2D_axis_item(ax_manager, title, orientation, axis_3D_direction):
-        axis_item = axis_widgets.CustomAxisItem(axis_3D_direction=axis_3D_direction, orientation=orientation) 
-        axis_item.setTitle(title)
-        ax_manager.add_2D_axis_item(axis_item, axis_3D_direction)
-        
-    axis_manager = axis_widgets.AxisManager(widget, n_ticks)
-
-    _create_add_2D_axis_item(axis_manager, "Strike", "bottom", "x")
-    _create_add_2D_axis_item(axis_manager, "Expiry", "bottom", "y")
-    
-    _create_add_2D_axis_item(axis_manager, "Implied Volatility", "left", "z")
-    _create_add_2D_axis_item(axis_manager, "Implied Volatility", "left", "z")
-    
-    grid_manager = axis_widgets.GridManager(widget)
-    return axis_manager, grid_manager

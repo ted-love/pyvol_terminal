@@ -10,7 +10,8 @@ class MetricEngine:
         self.generator=axis_utils.MetricFunctionGenerator(options_1_underlying_flag)
         self._change_metric_params("strike", "x")
         self._change_metric_params("expiry", "y")
-        self._change_metric_params("IVOL", "z")
+        self._change_metric_params("ivol", "z")
+        self.base_idx = np.arange(self._T.size, dtype=int)
 
         self.spot_object=spot_object
             
@@ -29,11 +30,12 @@ class MetricEngine:
             raise ValueError("Must provide both 'new_metric' and 'metric_direction' together, or neither.")
         
         x_orig, y_orig = self._K.copy(), self._T.copy()
-        z_orig = raw_object.IVOL.copy()
+        z_orig = raw_object.ivol.copy()
 
         x_metric, y, z, mask_removal_x, mask_rearrange_x = self.x_metric_function(raw_object, x_orig, y_orig, z_orig)
         
         x_new = x_orig[mask_removal_x][mask_rearrange_x]
+        
         x_new, y_metric, z, mask_removal_y, mask_rearrange_y = self.y_metric_function(raw_object, x_new, y, z)
         
         x_metric = x_metric[mask_removal_y][mask_rearrange_y]
@@ -43,7 +45,10 @@ class MetricEngine:
         
         x_metric = x_metric[mask_removal_z][mask_rearrange_z]
         y_metric = y_metric[mask_removal_z][mask_rearrange_z]
-        return x_metric, y_metric, z_metric
+        
+        idx_map = self.base_idx[mask_removal_x][mask_rearrange_x][mask_removal_y][mask_rearrange_y][mask_removal_z][mask_rearrange_z]
+        
+        return x_metric, y_metric, z_metric, idx_map
 
 class NormalisationEngine:
     def __init__(self, data_points=None):

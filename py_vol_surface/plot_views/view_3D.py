@@ -80,7 +80,7 @@ class CustomGLViewWidget(gl.GLViewWidget):
         painter.setPen(QtGui.QColor(*self.text_color))
         painter.drawText(text_rect, QtCore.Qt.AlignCenter, self.spot_text)
         painter.end()
-    
+
     def get_top_price_type(self,):
         if "ask" in self.plotted_price_types:
             self.top_price_type="ask"
@@ -118,6 +118,9 @@ class CustomGLViewWidget(gl.GLViewWidget):
     def _bring_item_to_front(self, item):
         super().removeItem(item)
         super().addItem(item)
+        
+    def wheelEvent(self, ev):
+        super().wheelEvent(ev)
 
     def remove_spot_text(self):
         self.show_spot_text = False

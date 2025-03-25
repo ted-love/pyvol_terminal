@@ -39,14 +39,14 @@ def calculate_xy_lines(X, Y, Z, x_fixed, y_fixed):
     return line_xz, line_yz
 
 def initialise_plotdataitems(price_types, colours):
-    vol_smiles = {}
+    vol_skews = {}
     vol_terms = {}
     for price_type in price_types:
         r, g, b, a = [int(c * 255) for c in colours[price_type]]
         pen = pg.mkPen(QtGui.QColor(r, g, b, a))
         vol_s = pg.PlotDataItem(x=[], y=[], pen=pen)
         vol_t = pg.PlotDataItem(x=[], y=[], pen=pen)
-        vol_smiles[price_type]=vol_s
+        vol_skews[price_type]=vol_s
         vol_terms[price_type]=vol_t
     
-    return vol_smiles, vol_terms
+    return vol_skews, vol_terms

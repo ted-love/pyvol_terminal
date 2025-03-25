@@ -1,6 +1,20 @@
 import numpy as np
 from dataclasses import dataclass
 import time
+from datetime import datetime
+import numpy as np
+
+
+class CustomDatetime:
+    @staticmethod
+    def fromtimestamp(ts):
+        print(ts)
+        if ts != ts: 
+            return str(ts)
+        return datetime.fromtimestamp(ts)
+
+
+
 
 class ValidPriceChecker:
     def __init__(self, spread_minimum):
