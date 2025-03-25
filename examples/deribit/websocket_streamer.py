@@ -11,8 +11,29 @@ from typing import Dict
 import requests
 import warnings
 from websockets.asyncio.client import connect
-
+import ssl
+import certifi
+import json
+ssl_context = ssl.create_default_context(cafile=certifi.where())
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
+
+def get_saved_data():
+    
+    df_options = pd.read_csv("df_options.csv")
+    df_futures = pd.read_csv("df_futures.csv")
+    df_spot = pd.read_csv("df_spot.csv")
+
+    with open("option_underlying_name_map.json", "r") as file:
+        option_underlying_name_map = json.load(file)
+        
+    with open("future_underlying_name_map.json", "r") as file:
+        future_underlying_name_map = json.load(file)
+
+    with open("channels.txt", "r") as file:
+        channels = [line.strip() for line in file]  
+        
+    return channels, df_options, df_futures, df_spot, option_underlying_name_map, future_underlying_name_map, 
 
 def generate_option_channels():
     channels = []
@@ -108,8 +129,23 @@ def generate_option_channels():
     channels.append(underlying_channel) 
 
     df_spot = pd.DataFrame([spot_instrument_name], columns=["instrument_name"])
-
+    
+    df_spot.to_csv("df_spot.csv", index=False)
+    df_futures.to_csv("df_futures.csv", index=False)
+    df_options.to_csv("df_options.csv", index=False)
+    
     future_underlying_name_map = {future_name : spot_instrument_name for future_name in df_futures["instrument_name"]}    
+    
+    with open("future_underlying_name_map.json", "w") as file:
+        json.dump(future_underlying_name_map, file, indent=4)
+        
+    with open("option_underlying_name_map.json", "w") as file:
+        json.dump(option_underlying_name_map, file, indent=4)
+        
+    with open("channels.txt", "w") as file:
+        for item in channels:
+            file.write(item + "\n")  
+    
     return channels, df_options, df_futures, df_spot, option_underlying_name_map, future_underlying_name_map, 
 
 
@@ -122,11 +158,11 @@ class Streamer:
         self.option_names = []
         self.future_names = []
         self._reformat_data(channels)
-        
+
         self.websocket_client: websockets.WebSocketClientProtocol = None
         self.refresh_token: str = None
         self.refresh_token_expiry_time: int = None
-    
+
     def _reformat_data(self, channels):
         if self.spot_flag:
             self.spot_name = channels[-1].split(".")[1]
@@ -149,11 +185,13 @@ class Streamer:
                             ping_interval=None,
                             compression=None,
                             close_timeout=60,
-                            max_size=3000000
+                            max_size=3000000,
+                            ssl=ssl_context,
                           ) as self.websocket_client:
                                                                 
             self.loop = asyncio.get_event_loop()
             await self.establish_heartbeat()
+            
 
             self.loop.create_task(self.ws_refresh_auth())
             self.loop.create_task(self.ws_operation(operation='subscribe',))
@@ -165,13 +203,13 @@ class Streamer:
                     break
                     
                 message: Dict = json.loads(message)
-                
-                if "id" in message and message['id'] == 42:
-                    continue
+
                 if "params" in message:
+                    
                     params = message["params"]
                     if "data" in params:
                         data=params["data"]
+                        
                         
                         instrument_name = data["instrument_name"]
                         if self.spot_flag:
@@ -185,7 +223,6 @@ class Streamer:
                         if self.future_flag and not instrument_name in self.future_names:
                             underlying_index = data["underlying_index"]
                             if "SYN." in underlying_index:
-                            
                                 data_synth = {}
                                 
                                 data_synth["instrument_name"]= data["underlying_index"]
@@ -196,9 +233,9 @@ class Streamer:
                                 if data_synth["instrument_name"] == "SYN.EXPIRY":
                                     data_synth["instrument_name"] = "SYN." + data["instrument_name"].rsplit("-", 2)[0]
                                     
-                                yield data
-                                continue
 
+                                yield data_synth
+                            
                         yield data
                         continue
                         
@@ -213,7 +250,6 @@ class Streamer:
                         if 'result' in message:
                             self.refresh_token = message['result']['refresh_token']
 
-                        # Refresh Authentication well before the required datetime
                         if message['testnet']:
                             expires_in: int = 300
                         else:
@@ -223,10 +259,33 @@ class Streamer:
                         continue
 
                 elif 'method' in list(message):
-                    # Respond to Heartbeat Message
                     if message['method'] == 'heartbeat':
                         await self.heartbeat_response()
-           
+                        
+    async def unsubscribe(self, channels):
+        print("unsubbed")
+        msg = {
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "public/unsubscribe",
+            "params": {
+                     "channels": channels
+                     }
+                }
+        await self.websocket_client.send(json.dumps(msg))
+        
+    async def LOB_for_snapshot(self, channels):
+        print(channels)
+        msg: Dict = {
+                    "jsonrpc": "2.0",
+                    "method": f"public/subscribe",
+                    "id": 1111,
+                    "params": {
+                        "channels": channels
+                        }
+                    }
+        await self.websocket_client.send(json.dumps(msg))
+        
     async def establish_heartbeat(self) -> None:
         msg: Dict = {
                     "jsonrpc": "2.0",
@@ -286,4 +345,6 @@ class Streamer:
                     }
         
         await self.websocket_client.send(json.dumps(msg))
+
+
 

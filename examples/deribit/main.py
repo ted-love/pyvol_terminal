@@ -13,9 +13,7 @@ def main():
     websocket_json_format = utils.create_websocket_json_formatter("instrument_name",
                                                                   "best_bid_price",
                                                                   "best_ask_price",
-                                                                  "timestamp"
-                                                                  )
-    
+                                                                  "timestamp")
     channels, df_options, df_futures, df_spot, option_underlying_name_map, future_underlying_name_map = websocket_streamer.generate_option_channels()
     
     ws = websocket_streamer.Streamer(url, channels, spot_flag=True, future_flag=True)
@@ -46,7 +44,7 @@ def main():
     option_config = {"object" : instruments.OptionInverted,
                      "underlying_map": option_underlying_name_map,
                      "engine": black.Engine,
-                     "valid_price_checker" : utils.ValidPriceChecker(20).check
+                     "valid_price_checker" : utils.ValidPriceChecker(50).check
                     }
     
     future_config = {"object" : instruments.Future,
@@ -60,7 +58,8 @@ def main():
     interpolation_config = {"engine" : interpolation_engines.CustomBSplineInterpolator(),
                             "n_x": 40,
                             "n_y": 30,
-                            }    
+                            }  
+      
     interest_rate_config = {}  # Do not require as inputs, will force r=0
     dividend_rate_config = {}  # Do not require as inputs, will force q=0
     

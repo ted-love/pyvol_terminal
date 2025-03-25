@@ -40,7 +40,7 @@ def get_bybit_tickers():
     channels.append(underlying_channel) 
     
     df_spot = pd.DataFrame([spot_instrument_name], columns=["instrument_name"])
-    
+
     option_underlying_name_map = {option_name : spot_instrument_name for option_name in df_options["instrument_name"]} 
     return channels, df_options, df_spot, option_underlying_name_map
 
