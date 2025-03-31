@@ -9,7 +9,7 @@ Key Features
 - Can use options with a future as the underlying and many different underlyings for the same option's chain.
 - Generate the surface's smile and term structure at any point along the surface
 
-![alt text](surface_screenshots/Screenshot%202025-03-20%20140758.png)
+![alt text](https://github.com/ted-love/py_vol_surface/blob/main/surface_screenshots/Screenshot%202025-03-31%20163344.png)
 ![alt_text](https://github.com/ted-love/py_vol_surface/blob/main/surface_screenshots/Screenshot%202025-03-25%20172036.png)
 
 ![alt text](surface_screenshots/Screenshot%202025-03-20%20140241.png)
