@@ -1,4 +1,4 @@
-# PyVol Terminal
+# PyVol Terminal - UNDER CONSTRUCTION
 
 A package that utilises QT and OpenGL graphics to visualise **realtime** 3D volatility surfaces and analytics.
 
